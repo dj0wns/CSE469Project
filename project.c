@@ -35,10 +35,7 @@ typedef struct {
 } ARGS;
 
 //TODO
-//Add cases for all arguments
-//Define magic numbers as constants
-//Set up macros for flags
-//Move argument parsing out of main
+//Use the parsed input to calculate the return values
 
 void initArgs(ARGS*);
 int parseArgs(int, char**, ARGS*);
@@ -54,15 +51,6 @@ int main(int argc, char **argv){
 
 	return 1;
 }	
-
-void printArgs(int *args){
-	int i;
-	for(i = 0; i < sizeof(ARGS)/sizeof(int); i++){
-		printf("Args: [%d]: %d\n", i, args[i]);
-	}
-	
-}
-
 
 void initArgs(ARGS *args){
 	args->addrReturnType = DEFAULT_ADDR_RETURN_TYPE;
@@ -169,4 +157,13 @@ int parseArgs(int argc, char **argv, ARGS *args){
 	}
 	return 1;
 }
+
+void printArgs(int *args){
+	int i;
+	for(i = 0; i < sizeof(ARGS)/sizeof(int); i++){
+		printf("Args: [%d]: %d\n", i, args[i]);
+	}
+	
+}
+
 
