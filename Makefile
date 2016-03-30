@@ -1,2 +1,2 @@
 all:
-	gcc -O2 -Wall -o project project.c
+	gcc -O2 -Wall -o address4forensics project.c
