@@ -26,14 +26,13 @@ int main(int argc, char **argv){
 	static ARGS args;
 	initArgs(&args);
 	parseArgs(argc, argv, &args);
-	printArgs(args);
 	return 1;
 }	
 
 int parseArgs(int argc, char **argv, ARGS *args){
 	int c;
 	opterr = 0;
-	while((c=getopt(argc,argv,"TDf:h:"))!=-1){
+	while((c=getopt(argc,argv,"pTDf:h:"))!=-1){
 		switch(c){
 			case 'T':
 				if(args->conversionModule == -1){
@@ -55,6 +54,8 @@ int parseArgs(int argc, char **argv, ARGS *args){
 			case 'h':
 				args->hexValue = (int)strtol(optarg,NULL,0);
 				break;
+			case 'p':
+				printArgs(args);
 			case '?':
 				//invalid
 			default:
