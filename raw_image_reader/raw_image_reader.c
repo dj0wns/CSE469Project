@@ -5,6 +5,7 @@
 #include <fcntl.h>
 #include <sys/stat.h>
 #include <stdint.h>
+#include <string.h>
 
 #define DIVIDER_LEN 60
 #define DIVIDER_CHAR "="
@@ -17,6 +18,13 @@
 
 #define MBR_OFFSET 0x1BE
 #define NUM_OF_PARTITIONS 4
+#define DEFAULT_SECTOR_SIZE 512
+#define OEM_NAME_LEN 8
+#define SIZE_OF_BOOT_INSTRUCTIONS 3
+
+#define FAT32Switch case(0x0B): case(0x0C): case(0x1B):
+#define FAT16Switch case(0x04): case(0x06):
+#define FAT16Offset 32
 
 typedef struct{
 	uint8_t state;
@@ -34,6 +42,24 @@ typedef struct __attribute__((__packed__)){
 	partition_entry entries[NUM_OF_PARTITIONS];
 	uint16_t bootRecordSig;
 } MBR;
+
+typedef struct __attribute__((__packed__)){
+	uint8_t asmBootInstructions[SIZE_OF_BOOT_INSTRUCTIONS];
+	char OEMName[OEM_NAME_LEN];
+	uint16_t bytesPerSector;
+	uint8_t sectorsPerCluster;
+	uint16_t sizeOfReserved;
+	uint8_t numFATs;
+	uint16_t maxFilesInRoot;
+	uint16_t numSectors16;
+	uint8_t mediaType;
+	uint16_t sizeOfFAT;
+	uint16_t sectorsPerTrack;
+	uint16_t numHeads;
+	uint32_t numPriorSectors;
+	uint32_t numSectors32;
+	uint32_t sizeOfFAT32;
+} VBR;
 
 const char *partition_type[256] = {
 	[0x01]="DOS 12-bit FAT",
@@ -63,18 +89,16 @@ const char *partition_type[256] = {
 	[0xA9]="NetBSD",
 	[0xC7]="Corrupted NTFS",
 	[0xEB]="BeOS"
-} ;
+};
 
 
-int calcMD5(int, int);
-int calcSHA1(int, int);
+int calcMD5(int, int, char*);
+int calcSHA1(int, int, char*);
 int readMBR(int, char*);
-void printPartitions(MBR *mbr);
+int readVBR(int, MBR*, VBR*);
+void printPartitions(MBR*);
 void printDivider();
-//TODO
-//Print md5 and sha1 to a file
-//locate and extract mbr
-//read each FAT16/32 VBR
+void printVBR(MBR*, VBR*);
 
 int main(int argc, char** argv){
 
@@ -85,18 +109,21 @@ int main(int argc, char** argv){
 	struct stat fstats;	
 	int file = open(argv[1], O_RDONLY);
 	MBR mbr;
+	VBR vbr[NUM_OF_PARTITIONS];
 	if(file<0){
 		printf("Unable to open file");
 		return -1;
 	}
 	printDivider();
 	fstat(file, &fstats);
-	calcMD5(file, fstats.st_size);
-	calcSHA1(file, fstats.st_size);
+	calcMD5(file, fstats.st_size, argv[1]);
+	calcSHA1(file, fstats.st_size, argv[1]);
 	readMBR(file, (char*)&mbr);
+	readVBR(file, &mbr, vbr);
 	printDivider();
 	printPartitions(&mbr);
 	printDivider();
+	printVBR(&mbr,vbr);
 	close(file);
 	return 1;
 }
@@ -105,6 +132,43 @@ void printDivider(){
 	printf("\n");
 	for(int i = 0; i < DIVIDER_LEN; i++) printf(DIVIDER_CHAR); 
 	printf("\n\n");
+}
+
+void printVBR(MBR *mbr, VBR *vbr){
+	int fatSize, endingSec, firstSecCluster2;
+	
+	for(int i =0; i < NUM_OF_PARTITIONS; i++){	
+		fatSize = vbr[i].sizeOfFAT;
+		endingSec = 0;
+		firstSecCluster2 = FAT16Offset;
+		switch(mbr->entries[i].type){
+			FAT32Switch
+				fatSize = vbr[i].sizeOfFAT32;
+				firstSecCluster2-= FAT16Offset;
+			FAT16Switch
+				endingSec = vbr[i].sizeOfReserved-1 + vbr[i].numFATs * fatSize;
+				firstSecCluster2 += mbr->entries[i].sectorDistance + endingSec + 1;
+				
+				printf("Partition %i(%s):\n", i, partition_type[mbr->entries[i].type]);	
+				printf("Reserved Area: Start Sector: %i Ending Sector: %i Size: %i sectors\n",
+						0, vbr[i].sizeOfReserved-1, vbr[i].sizeOfReserved);
+				printf("Sectors per cluster: %i sectors\n", 
+						vbr[i].sectorsPerCluster);
+				printf("FAT ares: Start Sector: %i Ending Sector: %i\n",
+						vbr[i].sizeOfReserved, endingSec);
+				printf("# of FATs: %i\n",
+					vbr[i].numFATs);
+				printf("The size of each FAT: %i sectors\n",
+						fatSize);
+				printf("The first sector of cluster %i: %i sectors\n",
+					2, firstSecCluster2);
+				printDivider();
+				break;
+			default:
+				printf("Partition %i(%s) is not a FAT16/32 Partition\n",
+						i, partition_type[mbr->entries[i].type]);
+		}
+	}
 }
 
 void printPartitions(MBR *mbr){
@@ -130,7 +194,7 @@ void printProgress(const char* name, int written, int total){
 	printf(">\r");
 }
 
-int calcSHA1(int file, int size){
+int calcSHA1(int file, int size, char* fname){
 	unsigned char c[SHA_DIGEST_LENGTH];
 	SHA_CTX mdContext;
 	int delay = 0, bytes, i, written=0;
@@ -149,10 +213,21 @@ int calcSHA1(int file, int size){
 	for(i = 0; i < SHA_DIGEST_LENGTH; i++) printf("%02x",c[i]);
 	printf("\n");
 	lseek(file, 0, SEEK_SET); //return to beginning of file
+	char final[256] = SHA1_TAG;
+	strcat(final, fname);
+	strcat (final, ".txt");
+	FILE *fp = fopen(final, "w");
+	if(fp){
+		for(i=0; i < SHA_DIGEST_LENGTH; i++) fprintf(fp, "%02x",c[i]);
+		fprintf(fp, "\t%s", fname);
+	}
+	fclose(fp);
+	
+
 	return 0;
 }
 
-int calcMD5(int file, int size){
+int calcMD5(int file, int size, char* fname){
 	unsigned char c[MD5_DIGEST_LENGTH];
 	MD5_CTX mdContext;
 	int delay = 0, bytes, i, written = 0;
@@ -171,14 +246,37 @@ int calcMD5(int file, int size){
 	for(i=0; i < MD5_DIGEST_LENGTH; i++) printf("%02x",c[i]);
 	printf("\n");
 	lseek(file, 0, SEEK_SET); //return to beginning of file
+	
+	//write to file
+	char final[256] = MD5_TAG;
+	strcat(final, fname);
+	strcat (final, ".txt");
+	FILE *fp = fopen(final, "w");
+	if(fp){
+		for(i=0; i < MD5_DIGEST_LENGTH; i++) fprintf(fp, "%02x",c[i]);
+		fprintf(fp, "\t%s", fname);
+	}
+	fclose(fp);
+	
 	return 0;
 }
 
 int readMBR(int file, char *mbr){
 	lseek(file, MBR_OFFSET, SEEK_SET);
-	int i = read(file, (char*)mbr, sizeof(MBR));
+	int i = read(file, mbr, sizeof(MBR));
 	if(i <0){
 		printf("Error no MBR found");
+	}
+	return 0;
+}
+
+int readVBR(int file, MBR *mbr, VBR* vbr){
+	for(int i = 0; i < NUM_OF_PARTITIONS; i++){
+		lseek(file, mbr->entries[i].sectorDistance * DEFAULT_SECTOR_SIZE, SEEK_SET);
+		int r = read(file, (char*)(&vbr[i]), sizeof(VBR));	
+		if(r <0){
+			printf("Error no VBR  found");
+		}	
 	}
 	return 0;
 }
