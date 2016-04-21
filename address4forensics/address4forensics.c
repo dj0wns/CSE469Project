@@ -15,6 +15,7 @@
 #define DEFAULT_TABLES 0
 #define DEFAULT_BYTE_OFFSET_FLAG 0
 
+#define FIRST_CLUSTER 2
 
 typedef enum {
 	LOGICAL = 'l',
@@ -34,6 +35,13 @@ typedef struct {
 	int byteOffsetFlag;
 } ARGS;
 
+typedef struct {
+	int logical;
+	int physical;
+	int cluster;
+
+} ADDR;
+
 //TODO
 //Use the parsed input to calculate the return values
 
@@ -41,16 +49,71 @@ void initArgs(ARGS*);
 int parseArgs(int, char**, ARGS*);
 void printArgs(int*);
 
+void fromLogical(ARGS*, ADDR*);
+void fromPhysical(ARGS*, ADDR*);
+void fromCluster(ARGS*, ADDR*);
+
+void toLogical(ADDR*);
+void toPhysical(ADDR*);
+void toCluster(ADDR*);
 
 int main(int argc, char **argv){
 	static ARGS args;
-
+	static ADDR addr;
+	void (*readFunc[])(ARGS*,ADDR*)  = {
+		['l'] = fromLogical, 
+		['p'] = fromPhysical, 
+		['c'] = fromCluster
+	};
+	void (*printFunc[])(ADDR*) = {
+		['l'] = toLogical,
+		['p'] = toPhysical,
+		['c'] = toCluster
+	};
 	initArgs(&args);
 	parseArgs(argc, argv, &args);
+	
+	if(args.addrReturnType == DEFAULT_ADDR_RETURN_TYPE 
+			|| args.addrInputType == DEFAULT_ADDR_INPUT_TYPE){
+		printf("Invalid Arguments\n");
+		return 0;
+	}
 
+	(*readFunc[args.addrInputType])(&args, &addr);
+	(*printFunc[args.addrReturnType])(&addr);
 
 	return 1;
 }	
+
+void fromLogical(ARGS *args, ADDR *addr){
+	addr->logical = args->address;
+	addr->physical = args->address+args->offset;
+	addr->cluster = addr->logical - args->sectorsReserved - (args->tables * args->sectorsFATTable);
+	addr->cluster = (addr->cluster/args->sectorsPerCluster) + FIRST_CLUSTER;
+
+}
+void fromPhysical(ARGS *args, ADDR *addr){
+	addr->logical = args->address - args->offset;
+	addr->physical = args->address;
+	addr->cluster = addr->logical - args->sectorsReserved - (args->tables * args->sectorsFATTable);
+	addr->cluster = (addr->cluster/args->sectorsPerCluster) + FIRST_CLUSTER;
+}
+void fromCluster(ARGS *args, ADDR *addr){
+	addr->logical= (args->address-FIRST_CLUSTER)*args->sectorsPerCluster 
+		+ (args->tables * args->sectorsFATTable) + args->sectorsReserved; 
+	addr->physical = addr->logical + args->offset;
+	addr->cluster = args->address;
+}
+void toLogical(ADDR *addr){
+	printf("%i\n", addr->logical);
+}
+void toPhysical(ADDR *addr){
+	printf("%i\n", addr->physical);
+
+}
+void toCluster(ADDR *addr){
+	printf("%i\n", addr->cluster);
+}
 
 void initArgs(ARGS *args){
 	args->addrReturnType = DEFAULT_ADDR_RETURN_TYPE;
@@ -138,7 +201,6 @@ int parseArgs(int argc, char **argv, ARGS *args){
 			case 'L':
 			case 'P':
 			case 'C':
-				printf("option %c\n", c);
 				if(args->addrReturnType != -1){
 					printf("Redundant parameter: %c\n", c);
 				} else {
