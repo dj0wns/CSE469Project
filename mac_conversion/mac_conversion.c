@@ -67,10 +67,10 @@ int main(int argc, char **argv){
 	swapEndian((char*)&(args.hexValue));
 	
 	if(args.conversionModule == date){
-		DATE_STRUCT *dateS = &(args.hexValue);
+		DATE_STRUCT *dateS = (DATE_STRUCT*)&(args.hexValue);
 		printf("Date: %s, %i, %i\n", months[dateS->month], dateS->day, dateS->year + YEAR_OFFSET);
 	} else if(args.conversionModule == time){
-		TIME_STRUCT *timeS = &(args.hexValue);
+		TIME_STRUCT *timeS = (TIME_STRUCT*)&(args.hexValue);
 		printf("Time: %i:%i:%i %s\n", timeS->hour%12, timeS->minute, timeS->second*2, 
 				timeS->hour > 12 ? "PM" : "AM");
 	}
@@ -123,11 +123,8 @@ int parseArgs(int argc, char **argv, ARGS *args){
 				break;
 			case 'p':
 				printArgs(*args);
-			case '?':
-				//invalid
-			default:
-				abort;
-		}
+				break;
+			}
 	}
 	return 1;
 }

@@ -167,6 +167,7 @@ void printVBR(MBR *mbr, VBR *vbr){
 			default:
 				printf("Partition %i(%s) is not a FAT16/32 Partition\n",
 						i, partition_type[mbr->entries[i].type]);
+				printDivider();
 		}
 	}
 }
