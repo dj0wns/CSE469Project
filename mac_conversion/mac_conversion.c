@@ -50,6 +50,7 @@ int parseArgs(int, char**, ARGS*);
 void initArgs(ARGS*);
 void printArgs(ARGS);
 void getHex(ARGS*);
+void swapEndian(char*);
 
 int main(int argc, char **argv){
 	static ARGS args;
@@ -63,19 +64,25 @@ int main(int argc, char **argv){
 	if((short)args.hexValue == -1 && args.filename[0] == '\0'){
 		printf("Input a hex value or file containing a hex value");
 	}
-
-	//reverse bytes because endianess
-	char temp = ((char*)&args.hexValue)[0];
-	((char*)&args.hexValue)[0] = ((char*)&args.hexValue)[1];
-	((char*)&args.hexValue)[1] = temp;
-	DATE_STRUCT *dateS = &(args.hexValue);
-	TIME_STRUCT *timeS = &(args.hexValue);
-	if(args.conversionModule == date)
+	swapEndian((char*)&(args.hexValue));
+	
+	if(args.conversionModule == date){
+		DATE_STRUCT *dateS = &(args.hexValue);
 		printf("Date: %s, %i, %i\n", months[dateS->month], dateS->day, dateS->year + YEAR_OFFSET);
-	if(args.conversionModule == time)
-		printf("Time: %i:%i:%i %s\n", timeS->hour%12, timeS->minute, timeS->second*2, timeS->hour > 12 ? "PM" : "AM");
+	} else if(args.conversionModule == time){
+		TIME_STRUCT *timeS = &(args.hexValue);
+		printf("Time: %i:%i:%i %s\n", timeS->hour%12, timeS->minute, timeS->second*2, 
+				timeS->hour > 12 ? "PM" : "AM");
+	}
 	return 1;
 }	
+
+void swapEndian(char* hex){
+	char temp = hex[0];
+	hex[0] = hex[1];
+	hex[1] = temp;
+}
+
 
 void getHex(ARGS *args){
 	FILE *fp = fopen(args->filename, "r");
